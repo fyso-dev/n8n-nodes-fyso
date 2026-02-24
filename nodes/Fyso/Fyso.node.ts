@@ -46,7 +46,6 @@ async function getAuth(
   return { baseUrl, token: tenantToken };
 }
 
-// Map Fyso field types to n8n resourceMapper types
 function fysoTypeToN8n(fieldType: string): ResourceMapperField['type'] {
   switch (fieldType) {
     case 'number': return 'number';
@@ -66,7 +65,7 @@ export class Fyso implements INodeType {
     group: ['transform'],
     version: 1,
     subtitle: '={{$parameter["operation"] + " · " + $parameter["entityName"]}}',
-    description: 'Crear, leer, actualizar y eliminar registros en Fyso',
+    description: 'Create, read, update and delete records in Fyso',
     defaults: { name: 'Fyso' },
     inputs: ['main'],
     outputs: ['main'],
@@ -79,76 +78,76 @@ export class Fyso implements INodeType {
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
-        description: 'El tenant de Fyso sobre el que operar',
+        description: 'The Fyso tenant to operate on',
         modes: [
           {
-            displayName: 'Lista',
+            displayName: 'List',
             name: 'list',
             type: 'list',
-            placeholder: 'Seleccioná un tenant...',
+            placeholder: 'Select a tenant...',
             typeOptions: { searchListMethod: 'getTenants', searchable: true },
           },
           {
             displayName: 'ID',
             name: 'id',
             type: 'string',
-            placeholder: 'uuid del tenant',
-            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Ingresá un ID válido' } }],
+            placeholder: 'tenant uuid',
+            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Enter a valid ID' } }],
           },
         ],
       },
       // ── Operation ───────────────────────────────────────────────────────────
       {
-        displayName: 'Operación',
+        displayName: 'Operation',
         name: 'operation',
         type: 'options',
         noDataExpression: true,
         options: [
-          { name: 'Crear Registro', value: 'create', action: 'Crear un registro' },
-          { name: 'Obtener Registro', value: 'get', action: 'Obtener un registro por ID' },
-          { name: 'Listar Registros', value: 'list', action: 'Listar registros de una entidad' },
-          { name: 'Actualizar Registro', value: 'update', action: 'Actualizar un registro' },
-          { name: 'Eliminar Registro', value: 'delete', action: 'Eliminar un registro' },
+          { name: 'Create Record', value: 'create', action: 'Create a record' },
+          { name: 'Get Record', value: 'get', action: 'Get a record by ID' },
+          { name: 'List Records', value: 'list', action: 'List records from an entity' },
+          { name: 'Update Record', value: 'update', action: 'Update a record' },
+          { name: 'Delete Record', value: 'delete', action: 'Delete a record' },
         ],
         default: 'create',
       },
       // ── Entity ──────────────────────────────────────────────────────────────
       {
-        displayName: 'Entidad',
+        displayName: 'Entity',
         name: 'entityName',
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
-        description: 'La entidad de Fyso sobre la que operar',
+        description: 'The Fyso entity to operate on',
         modes: [
           {
-            displayName: 'Lista',
+            displayName: 'List',
             name: 'list',
             type: 'list',
-            placeholder: 'Seleccioná una entidad...',
+            placeholder: 'Select an entity...',
             typeOptions: { searchListMethod: 'getEntities', searchable: true },
           },
           {
-            displayName: 'Nombre',
+            displayName: 'Name',
             name: 'name',
             type: 'string',
-            placeholder: 'pacientes',
+            placeholder: 'patients',
           },
         ],
       },
       // ── Record ID (get / update / delete) ────────────────────────────────────
       {
-        displayName: 'ID del Registro',
+        displayName: 'Record ID',
         name: 'recordId',
         type: 'string',
         default: '',
         required: true,
         displayOptions: { show: { operation: ['get', 'update', 'delete'] } },
-        description: 'UUID del registro',
+        description: 'UUID of the record',
       },
       // ── Fields via resourceMapper (create / update) ───────────────────────────
       {
-        displayName: 'Campos',
+        displayName: 'Fields',
         name: 'fields',
         type: 'resourceMapper',
         default: { mappingMode: 'defineBelow', value: null },
@@ -160,7 +159,7 @@ export class Fyso implements INodeType {
           resourceMapper: {
             resourceMapperMethod: 'getEntityFields',
             mode: 'upsert',
-            fieldWords: { singular: 'Campo', plural: 'Campos' },
+            fieldWords: { singular: 'Field', plural: 'Fields' },
             addAllFields: true,
             multiKeyMatch: false,
           },
@@ -168,7 +167,7 @@ export class Fyso implements INodeType {
       },
       // ── List options ─────────────────────────────────────────────────────────
       {
-        displayName: 'Límite',
+        displayName: 'Limit',
         name: 'limit',
         type: 'number',
         default: 100,
@@ -240,7 +239,6 @@ export class Fyso implements INodeType {
             canBeUsedToMatch: false,
           };
 
-          // Add options for select fields
           if (f.fieldType === 'select' && f.config?.options) {
             field.options = f.config.options.map((o) =>
               typeof o === 'string' ? { name: o, value: o } : { name: o.label ?? o.value, value: o.value },
@@ -304,7 +302,7 @@ export class Fyso implements INodeType {
         const res = await fetch(`${base}/records/${recordId}`, { method: 'DELETE', headers });
         responseData = await res.json();
       } else {
-        throw new NodeOperationError(this.getNode(), `Operación desconocida: ${operation}`);
+        throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
       }
 
       results.push({ json: responseData as IDataObject });

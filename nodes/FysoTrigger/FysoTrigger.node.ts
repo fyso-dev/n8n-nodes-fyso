@@ -50,7 +50,7 @@ export class FysoTrigger implements INodeType {
     group: ['trigger'],
     version: 1,
     subtitle: '={{$parameter["eventTypes"].join(", ") + " · " + $parameter["entityName"]}}',
-    description: 'Disparar un workflow cuando se crean, actualizan o eliminan registros en Fyso',
+    description: 'Trigger a workflow when records are created, updated or deleted in Fyso',
     defaults: { name: 'Fyso Trigger' },
     inputs: [],
     outputs: ['main'],
@@ -73,55 +73,55 @@ export class FysoTrigger implements INodeType {
         required: true,
         modes: [
           {
-            displayName: 'Lista',
+            displayName: 'List',
             name: 'list',
             type: 'list',
-            placeholder: 'Seleccioná un tenant...',
+            placeholder: 'Select a tenant...',
             typeOptions: { searchListMethod: 'getTenants', searchable: true },
           },
           {
             displayName: 'ID',
             name: 'id',
             type: 'string',
-            placeholder: 'uuid del tenant',
-            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Ingresá un ID válido' } }],
+            placeholder: 'tenant uuid',
+            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Enter a valid ID' } }],
           },
         ],
       },
       // ── Entity ──────────────────────────────────────────────────────────────
       {
-        displayName: 'Entidad',
+        displayName: 'Entity',
         name: 'entityName',
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
         modes: [
           {
-            displayName: 'Lista',
+            displayName: 'List',
             name: 'list',
             type: 'list',
-            placeholder: 'Seleccioná una entidad...',
+            placeholder: 'Select an entity...',
             typeOptions: { searchListMethod: 'getEntities', searchable: true },
           },
           {
-            displayName: 'Nombre',
+            displayName: 'Name',
             name: 'name',
             type: 'string',
-            placeholder: 'pacientes',
+            placeholder: 'patients',
           },
         ],
       },
       // ── Events ──────────────────────────────────────────────────────────────
       {
-        displayName: 'Eventos',
+        displayName: 'Events',
         name: 'eventTypes',
         type: 'multiOptions',
         required: true,
         default: ['record.created'],
         options: [
-          { name: 'Registro Creado', value: 'record.created' },
-          { name: 'Registro Actualizado', value: 'record.updated' },
-          { name: 'Registro Eliminado', value: 'record.deleted' },
+          { name: 'Record Created', value: 'record.created' },
+          { name: 'Record Updated', value: 'record.updated' },
+          { name: 'Record Deleted', value: 'record.deleted' },
         ],
       },
     ],
@@ -143,9 +143,8 @@ export class FysoTrigger implements INodeType {
 
       async getEntities(this: ILoadOptionsFunctions): Promise<INodeListSearchResult> {
         const tenantLocator = this.getNodeParameter('tenantId') as { value: string };
-        const tenantId = tenantLocator.value;
-        if (!tenantId) return { results: [] };
-        const { baseUrl, token } = await getAuth(this, tenantId);
+        if (!tenantLocator.value) return { results: [] };
+        const { baseUrl, token } = await getAuth(this, tenantLocator.value);
         const res = await fetch(`${baseUrl}/api/metadata/entities`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -156,7 +155,6 @@ export class FysoTrigger implements INodeType {
     },
   };
 
-  // Called when the workflow is activated — creates the Fyso webhook subscription
   webhookMethods = {
     default: {
       async checkExists(this: IHookFunctions): Promise<boolean> {

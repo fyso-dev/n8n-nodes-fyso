@@ -9,7 +9,7 @@ export class FysoApi implements ICredentialType {
       displayName: 'Email',
       name: 'email',
       type: 'string',
-      placeholder: 'admin@ejemplo.com',
+      placeholder: 'admin@example.com',
       default: '',
       required: true,
     },

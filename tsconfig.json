@@ -11,7 +11,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "typeRoots": ["node_modules/@types"]
   },
   "include": ["credentials/**/*", "nodes/**/*"],
   "exclude": ["node_modules", "dist"]

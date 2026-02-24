@@ -1,4 +1,5 @@
 import type {
+  IDataObject,
   IHookFunctions,
   ILoadOptionsFunctions,
   INodeListSearchResult,
@@ -7,7 +8,6 @@ import type {
   IWebhookFunctions,
   IWebhookResponseData,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 async function fysoLogin(baseUrl: string, email: string, password: string): Promise<string> {
   const res = await fetch(`${baseUrl}/api/auth/login`, {
@@ -53,7 +53,7 @@ export class FysoTrigger implements INodeType {
     description: 'Disparar un workflow cuando se crean, actualizan o eliminan registros en Fyso',
     defaults: { name: 'Fyso Trigger' },
     inputs: [],
-    outputs: [NodeConnectionType.Main],
+    outputs: ['main'],
     credentials: [{ name: 'fysoApi', required: true }],
     webhooks: [
       {
@@ -215,7 +215,7 @@ export class FysoTrigger implements INodeType {
   async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
     const body = this.getBodyData();
     return {
-      workflowData: [[{ json: body as Record<string, unknown> }]],
+      workflowData: [[{ json: body as IDataObject }]],
     };
   }
 }

@@ -1,45 +1,36 @@
 import type {
+  IDataObject,
   IExecuteFunctions,
   ILoadOptionsFunctions,
   INodeExecutionData,
   INodeListSearchResult,
   INodeType,
   INodeTypeDescription,
+  ResourceMapperField,
+  ResourceMapperFields,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-async function fysoLogin(
-  baseUrl: string,
-  email: string,
-  password: string,
-): Promise<string> {
+async function fysoLogin(baseUrl: string, email: string, password: string): Promise<string> {
   const res = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) {
-    throw new Error(`Fyso login failed: ${data.error ?? 'unknown error'}`);
-  }
+  if (!data.success || !data.data?.token) throw new Error(`Fyso login failed: ${data.error ?? 'unknown error'}`);
   return data.data.token;
 }
 
-async function fysoSelectTenant(
-  baseUrl: string,
-  sessionToken: string,
-  tenantId: string,
-): Promise<string> {
+async function fysoSelectTenant(baseUrl: string, sessionToken: string, tenantId: string): Promise<string> {
   const res = await fetch(`${baseUrl}/api/auth/tenants/${tenantId}/select`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) {
-    throw new Error(`Fyso tenant select failed: ${data.error ?? 'unknown error'}`);
-  }
+  if (!data.success || !data.data?.token) throw new Error(`Fyso tenant select failed: ${data.error ?? 'unknown error'}`);
   return data.data.token;
 }
 
@@ -55,6 +46,16 @@ async function getAuth(
   return { baseUrl, token: tenantToken };
 }
 
+// Map Fyso field types to n8n resourceMapper types
+function fysoTypeToN8n(fieldType: string): ResourceMapperField['type'] {
+  switch (fieldType) {
+    case 'number': return 'number';
+    case 'boolean': return 'boolean';
+    case 'date': return 'dateTime';
+    default: return 'string';
+  }
+}
+
 // ─── Node ─────────────────────────────────────────────────────────────────────
 
 export class Fyso implements INodeType {
@@ -67,8 +68,8 @@ export class Fyso implements INodeType {
     subtitle: '={{$parameter["operation"] + " · " + $parameter["entityName"]}}',
     description: 'Crear, leer, actualizar y eliminar registros en Fyso',
     defaults: { name: 'Fyso' },
-    inputs: [NodeConnectionType.Main],
-    outputs: [NodeConnectionType.Main],
+    inputs: ['main'],
+    outputs: ['main'],
     credentials: [{ name: 'fysoApi', required: true }],
     properties: [
       // ── Tenant ──────────────────────────────────────────────────────────────
@@ -85,10 +86,7 @@ export class Fyso implements INodeType {
             name: 'list',
             type: 'list',
             placeholder: 'Seleccioná un tenant...',
-            typeOptions: {
-              searchListMethod: 'getTenants',
-              searchable: true,
-            },
+            typeOptions: { searchListMethod: 'getTenants', searchable: true },
           },
           {
             displayName: 'ID',
@@ -128,10 +126,7 @@ export class Fyso implements INodeType {
             name: 'list',
             type: 'list',
             placeholder: 'Seleccioná una entidad...',
-            typeOptions: {
-              searchListMethod: 'getEntities',
-              searchable: true,
-            },
+            typeOptions: { searchListMethod: 'getEntities', searchable: true },
           },
           {
             displayName: 'Nombre',
@@ -151,15 +146,25 @@ export class Fyso implements INodeType {
         displayOptions: { show: { operation: ['get', 'update', 'delete'] } },
         description: 'UUID del registro',
       },
-      // ── Data (create / update) ───────────────────────────────────────────────
+      // ── Fields via resourceMapper (create / update) ───────────────────────────
       {
-        displayName: 'Datos',
-        name: 'data',
-        type: 'json',
-        default: '{}',
+        displayName: 'Campos',
+        name: 'fields',
+        type: 'resourceMapper',
+        default: { mappingMode: 'defineBelow', value: null },
+        noDataExpression: true,
         required: true,
         displayOptions: { show: { operation: ['create', 'update'] } },
-        description: 'Campos del registro en formato JSON',
+        typeOptions: {
+          loadOptionsDependsOn: ['tenantId.value', 'entityName.value'],
+          resourceMapper: {
+            resourceMapperMethod: 'getEntityFields',
+            mode: 'upsert',
+            fieldWords: { singular: 'Campo', plural: 'Campos' },
+            addAllFields: true,
+            multiKeyMatch: false,
+          },
+        },
       },
       // ── List options ─────────────────────────────────────────────────────────
       {
@@ -183,24 +188,69 @@ export class Fyso implements INodeType {
         });
         const data = (await res.json()) as { success: boolean; data?: Array<{ id: string; name: string; slug: string }> };
         if (!data.success || !data.data) return { results: [] };
-        return {
-          results: data.data.map((t) => ({ name: `${t.name} (${t.slug})`, value: t.id })),
-        };
+        return { results: data.data.map((t) => ({ name: `${t.name} (${t.slug})`, value: t.id })) };
       },
 
       async getEntities(this: ILoadOptionsFunctions): Promise<INodeListSearchResult> {
         const tenantLocator = this.getNodeParameter('tenantId') as { value: string };
-        const tenantId = tenantLocator.value;
-        if (!tenantId) return { results: [] };
-        const { baseUrl, token } = await getAuth(this, tenantId);
+        if (!tenantLocator.value) return { results: [] };
+        const { baseUrl, token } = await getAuth(this, tenantLocator.value);
         const res = await fetch(`${baseUrl}/api/metadata/entities`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = (await res.json()) as { success: boolean; data?: Array<{ name: string; displayName: string }> };
         if (!data.success || !data.data) return { results: [] };
-        return {
-          results: data.data.map((e) => ({ name: e.displayName ?? e.name, value: e.name })),
+        return { results: data.data.map((e) => ({ name: e.displayName ?? e.name, value: e.name })) };
+      },
+    },
+
+    resourceMapping: {
+      async getEntityFields(this: ILoadOptionsFunctions): Promise<ResourceMapperFields> {
+        const tenantLocator = this.getNodeParameter('tenantId') as { value: string };
+        const entityLocator = this.getNodeParameter('entityName') as { value: string };
+        if (!tenantLocator.value || !entityLocator.value) return { fields: [] };
+
+        const { baseUrl, token } = await getAuth(this, tenantLocator.value);
+        const res = await fetch(`${baseUrl}/api/metadata/entities/${entityLocator.value}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json()) as {
+          success: boolean;
+          data?: {
+            fields?: Array<{
+              fieldKey: string;
+              name: string;
+              fieldType: string;
+              isRequired?: boolean;
+              config?: { options?: Array<{ value: string; label?: string } | string> };
+            }>;
+          };
         };
+
+        if (!data.success || !data.data?.fields) return { fields: [] };
+
+        const fields: ResourceMapperField[] = data.data.fields.map((f) => {
+          const field: ResourceMapperField = {
+            id: f.fieldKey,
+            displayName: f.name,
+            required: f.isRequired ?? false,
+            defaultMatch: false,
+            display: true,
+            type: fysoTypeToN8n(f.fieldType),
+            canBeUsedToMatch: false,
+          };
+
+          // Add options for select fields
+          if (f.fieldType === 'select' && f.config?.options) {
+            field.options = f.config.options.map((o) =>
+              typeof o === 'string' ? { name: o, value: o } : { name: o.label ?? o.value, value: o.value },
+            );
+          }
+
+          return field;
+        });
+
+        return { fields };
       },
     },
   };
@@ -223,8 +273,8 @@ export class Fyso implements INodeType {
       let responseData: unknown;
 
       if (operation === 'create') {
-        const raw = this.getNodeParameter('data', i) as string;
-        const body = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const fieldData = this.getNodeParameter('fields', i) as { value: IDataObject };
+        const body = fieldData.value ?? {};
         const res = await fetch(`${base}/records`, { method: 'POST', headers, body: JSON.stringify(body) });
         responseData = await res.json();
       } else if (operation === 'get') {
@@ -236,13 +286,13 @@ export class Fyso implements INodeType {
         const res = await fetch(`${base}/records?limit=${limit}`, { headers });
         const data = (await res.json()) as { success: boolean; data?: unknown[] };
         if (data.success && Array.isArray(data.data)) {
-          return [data.data.map((record) => ({ json: record as Record<string, unknown> }))];
+          return [data.data.map((record) => ({ json: record as IDataObject }))];
         }
         responseData = data;
       } else if (operation === 'update') {
         const recordId = this.getNodeParameter('recordId', i) as string;
-        const raw = this.getNodeParameter('data', i) as string;
-        const body = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        const fieldData = this.getNodeParameter('fields', i) as { value: IDataObject };
+        const body = fieldData.value ?? {};
         const res = await fetch(`${base}/records/${recordId}`, {
           method: 'PUT',
           headers,
@@ -257,7 +307,7 @@ export class Fyso implements INodeType {
         throw new NodeOperationError(this.getNode(), `Operación desconocida: ${operation}`);
       }
 
-      results.push({ json: responseData as Record<string, unknown> });
+      results.push({ json: responseData as IDataObject });
     }
 
     return [results];

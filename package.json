@@ -1,0 +1,53 @@
+{
+  "name": "n8n-nodes-fyso",
+  "version": "0.1.0",
+  "description": "n8n community node for Fyso — create, read, update, delete records and trigger workflows on entity events",
+  "keywords": [
+    "n8n-community-node-package",
+    "fyso",
+    "automation",
+    "no-code"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/fyso-dev/n8n-nodes-fyso",
+  "author": {
+    "name": "Fyso",
+    "email": "hello@fyso.dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fyso-dev/n8n-nodes-fyso.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier --write . --ignore-path .prettierignore",
+    "lint": "eslint . --ext .ts",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/FysoApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Fyso/Fyso.node.js",
+      "dist/nodes/FysoTrigger/FysoTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "eslint": "^8.0.0",
+    "gulp": "^4.0.0",
+    "n8n-workflow": "*",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

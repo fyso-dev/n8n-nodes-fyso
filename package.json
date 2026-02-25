@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-fyso",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "n8n community node for Fyso — create, read, update, delete records and trigger workflows on entity events",
   "keywords": [
     "n8n-community-node-package",

@@ -1,9 +1,21 @@
-import type { ICredentialType, INodeProperties } from 'n8n-workflow';
+import type { ICredentialTestRequest, ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class FysoApi implements ICredentialType {
   name = 'fysoApi';
   displayName = 'Fyso API';
+  icon = 'file:fyso.svg' as const;
   documentationUrl = 'https://docs.fyso.dev';
+  test: ICredentialTestRequest = {
+    request: {
+      baseURL: '={{$credentials.apiUrl}}',
+      url: '/api/auth/login',
+      method: 'POST',
+      body: {
+        email: '={{$credentials.email}}',
+        password: '={{$credentials.password}}',
+      },
+    },
+  };
   properties: INodeProperties[] = [
     {
       displayName: 'Email',

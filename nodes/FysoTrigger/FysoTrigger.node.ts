@@ -8,6 +8,7 @@ import type {
   IWebhookFunctions,
   IWebhookResponseData,
 } from 'n8n-workflow';
+import { ApplicationError } from 'n8n-workflow';
 
 async function fysoLogin(baseUrl: string, email: string, password: string): Promise<string> {
   const res = await fetch(`${baseUrl}/api/auth/login`, {
@@ -16,7 +17,7 @@ async function fysoLogin(baseUrl: string, email: string, password: string): Prom
     body: JSON.stringify({ email, password }),
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new Error(`Fyso login failed: ${data.error}`);
+  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso login failed: ${data.error}`);
   return data.data.token;
 }
 
@@ -26,7 +27,7 @@ async function fysoSelectTenant(baseUrl: string, sessionToken: string, tenantId:
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new Error(`Fyso tenant select failed: ${data.error}`);
+  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso tenant select failed: ${data.error}`);
   return data.data.token;
 }
 
@@ -52,6 +53,7 @@ export class FysoTrigger implements INodeType {
     subtitle: '={{$parameter["eventTypes"].join(", ") + " · " + $parameter["entityName"]}}',
     description: 'Trigger a workflow when records are created, updated or deleted in Fyso',
     defaults: { name: 'Fyso Trigger' },
+    usableAsTool: true,
     inputs: [],
     outputs: ['main'],
     credentials: [{ name: 'fysoApi', required: true }],

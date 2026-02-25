@@ -23,7 +23,8 @@
     "build": "tsc && gulp build:icons",
     "dev": "tsc --watch",
     "format": "prettier --write . --ignore-path .prettierignore",
-    "lint": "eslint . --ext .ts",
+    "lint": "n8n-node lint",
+    "test": "n8n-node lint",
     "prepublishOnly": "npm run build"
   },
   "files": [
@@ -40,10 +41,11 @@
     ]
   },
   "devDependencies": {
+    "@n8n/node-cli": "^0.21.0",
     "@types/node": "^18.0.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
-    "eslint": "^8.0.0",
+    "eslint": "^9.39.3",
     "gulp": "^4.0.0",
     "n8n-workflow": "*",
     "prettier": "^3.0.0",

@@ -9,7 +9,7 @@ import type {
   ResourceMapperField,
   ResourceMapperFields,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { ApplicationError, NodeOperationError } from 'n8n-workflow';
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ async function fysoLogin(baseUrl: string, email: string, password: string): Prom
     body: JSON.stringify({ email, password }),
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new Error(`Fyso login failed: ${data.error ?? 'unknown error'}`);
+  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso login failed: ${data.error ?? 'unknown error'}`);
   return data.data.token;
 }
 
@@ -30,7 +30,7 @@ async function fysoSelectTenant(baseUrl: string, sessionToken: string, tenantId:
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new Error(`Fyso tenant select failed: ${data.error ?? 'unknown error'}`);
+  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso tenant select failed: ${data.error ?? 'unknown error'}`);
   return data.data.token;
 }
 
@@ -67,6 +67,7 @@ export class Fyso implements INodeType {
     subtitle: '={{$parameter["operation"] + " · " + $parameter["entityName"]}}',
     description: 'Create, read, update and delete records in Fyso',
     defaults: { name: 'Fyso' },
+    usableAsTool: true,
     inputs: ['main'],
     outputs: ['main'],
     credentials: [{ name: 'fysoApi', required: true }],
@@ -104,10 +105,10 @@ export class Fyso implements INodeType {
         noDataExpression: true,
         options: [
           { name: 'Create Record', value: 'create', action: 'Create a record' },
+          { name: 'Delete Record', value: 'delete', action: 'Delete a record' },
           { name: 'Get Record', value: 'get', action: 'Get a record by ID' },
           { name: 'List Records', value: 'list', action: 'List records from an entity' },
           { name: 'Update Record', value: 'update', action: 'Update a record' },
-          { name: 'Delete Record', value: 'delete', action: 'Delete a record' },
         ],
         default: 'create',
       },
@@ -170,7 +171,9 @@ export class Fyso implements INodeType {
         displayName: 'Limit',
         name: 'limit',
         type: 'number',
-        default: 100,
+        default: 50,
+        description: 'Max number of results to return',
+        typeOptions: { minValue: 1 },
         displayOptions: { show: { operation: ['list'] } },
       },
     ],

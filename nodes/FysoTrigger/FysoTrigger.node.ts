@@ -17,7 +17,9 @@ async function fysoLogin(baseUrl: string, email: string, password: string): Prom
     body: JSON.stringify({ email, password }),
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso login failed: ${data.error}`);
+  if (!data.success || !data.data?.token) {
+    throw new ApplicationError(`Fyso authentication failed: ${data.error ?? 'invalid credentials'}`);
+  }
   return data.data.token;
 }
 
@@ -27,7 +29,9 @@ async function fysoSelectTenant(baseUrl: string, sessionToken: string, tenantId:
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso tenant select failed: ${data.error}`);
+  if (!data.success || !data.data?.token) {
+    throw new ApplicationError(`Fyso tenant selection failed: ${data.error ?? 'unknown error'}`);
+  }
   return data.data.token;
 }
 
@@ -50,7 +54,7 @@ export class FysoTrigger implements INodeType {
     icon: 'file:fyso.svg',
     group: ['trigger'],
     version: 1,
-    subtitle: '={{$parameter["eventTypes"].join(", ") + " · " + $parameter["entityName"]}}',
+    subtitle: '={{$parameter["eventTypes"].join(", ") + " · " + $parameter["entityName"].value}}',
     description: 'Trigger a workflow when records are created, updated or deleted in Fyso',
     defaults: { name: 'Fyso Trigger' },
     usableAsTool: true,
@@ -73,6 +77,8 @@ export class FysoTrigger implements INodeType {
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
+        description: 'The Fyso tenant to listen for record events on',
+        hint: 'Each tenant is an isolated workspace with its own entities and records',
         modes: [
           {
             displayName: 'List',
@@ -85,8 +91,8 @@ export class FysoTrigger implements INodeType {
             displayName: 'ID',
             name: 'id',
             type: 'string',
-            placeholder: 'tenant uuid',
-            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Enter a valid ID' } }],
+            placeholder: 'e.g. 550e8400-e29b-41d4-a716-446655440000',
+            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Enter a valid tenant ID' } }],
           },
         ],
       },
@@ -97,6 +103,8 @@ export class FysoTrigger implements INodeType {
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
+        description: 'The Fyso entity (data model) to watch for record events, e.g. patients, orders',
+        hint: 'The trigger will fire whenever records in this entity change',
         modes: [
           {
             displayName: 'List',
@@ -109,7 +117,7 @@ export class FysoTrigger implements INodeType {
             displayName: 'Name',
             name: 'name',
             type: 'string',
-            placeholder: 'patients',
+            placeholder: 'e.g. patients',
           },
         ],
       },
@@ -120,10 +128,11 @@ export class FysoTrigger implements INodeType {
         type: 'multiOptions',
         required: true,
         default: ['record.created'],
+        description: 'The record events that will trigger this workflow. Select one or more.',
         options: [
-          { name: 'Record Created', value: 'record.created' },
-          { name: 'Record Updated', value: 'record.updated' },
-          { name: 'Record Deleted', value: 'record.deleted' },
+          { name: 'Record Created', value: 'record.created', description: 'Fires when a new record is added to the entity' },
+          { name: 'Record Deleted', value: 'record.deleted', description: 'Fires when a record is removed from the entity' },
+          { name: 'Record Updated', value: 'record.updated', description: 'Fires when an existing record is modified' },
         ],
       },
     ],

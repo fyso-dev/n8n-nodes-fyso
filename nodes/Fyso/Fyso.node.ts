@@ -6,10 +6,11 @@ import type {
   INodeListSearchResult,
   INodeType,
   INodeTypeDescription,
+  JsonObject,
   ResourceMapperField,
   ResourceMapperFields,
 } from 'n8n-workflow';
-import { ApplicationError, NodeOperationError } from 'n8n-workflow';
+import { ApplicationError, NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -20,7 +21,9 @@ async function fysoLogin(baseUrl: string, email: string, password: string): Prom
     body: JSON.stringify({ email, password }),
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso login failed: ${data.error ?? 'unknown error'}`);
+  if (!data.success || !data.data?.token) {
+    throw new ApplicationError(`Fyso authentication failed: ${data.error ?? 'invalid credentials'}`);
+  }
   return data.data.token;
 }
 
@@ -30,7 +33,9 @@ async function fysoSelectTenant(baseUrl: string, sessionToken: string, tenantId:
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
   const data = (await res.json()) as { success: boolean; data?: { token: string }; error?: string };
-  if (!data.success || !data.data?.token) throw new ApplicationError(`Fyso tenant select failed: ${data.error ?? 'unknown error'}`);
+  if (!data.success || !data.data?.token) {
+    throw new ApplicationError(`Fyso tenant selection failed: ${data.error ?? 'unknown error'}`);
+  }
   return data.data.token;
 }
 
@@ -64,7 +69,7 @@ export class Fyso implements INodeType {
     icon: 'file:fyso.svg',
     group: ['transform'],
     version: 1,
-    subtitle: '={{$parameter["operation"] + " · " + $parameter["entityName"]}}',
+    subtitle: '={{$parameter["operation"] + " · " + $parameter["entityName"].value}}',
     description: 'Create, read, update and delete records in Fyso',
     defaults: { name: 'Fyso' },
     usableAsTool: true,
@@ -79,7 +84,8 @@ export class Fyso implements INodeType {
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
-        description: 'The Fyso tenant to operate on',
+        description: 'The Fyso tenant that owns the data you want to operate on',
+        hint: 'Each tenant is an isolated workspace with its own entities and records',
         modes: [
           {
             displayName: 'List',
@@ -92,8 +98,8 @@ export class Fyso implements INodeType {
             displayName: 'ID',
             name: 'id',
             type: 'string',
-            placeholder: 'tenant uuid',
-            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Enter a valid ID' } }],
+            placeholder: 'e.g. 550e8400-e29b-41d4-a716-446655440000',
+            validation: [{ type: 'regex', properties: { regex: '.+', errorMessage: 'Enter a valid tenant ID' } }],
           },
         ],
       },
@@ -119,7 +125,8 @@ export class Fyso implements INodeType {
         type: 'resourceLocator',
         default: { mode: 'list', value: '' },
         required: true,
-        description: 'The Fyso entity to operate on',
+        description: 'The Fyso entity (data model) to operate on, e.g. patients, orders, products',
+        hint: 'Entities are the data models defined in your Fyso tenant',
         modes: [
           {
             displayName: 'List',
@@ -132,7 +139,7 @@ export class Fyso implements INodeType {
             displayName: 'Name',
             name: 'name',
             type: 'string',
-            placeholder: 'patients',
+            placeholder: 'e.g. patients',
           },
         ],
       },
@@ -144,7 +151,8 @@ export class Fyso implements INodeType {
         default: '',
         required: true,
         displayOptions: { show: { operation: ['get', 'update', 'delete'] } },
-        description: 'UUID of the record',
+        description: 'The unique identifier (UUID) of the record to operate on',
+        placeholder: 'e.g. 550e8400-e29b-41d4-a716-446655440000',
       },
       // ── Fields via resourceMapper (create / update) ───────────────────────────
       {
@@ -175,6 +183,33 @@ export class Fyso implements INodeType {
         description: 'Max number of results to return',
         typeOptions: { minValue: 1 },
         displayOptions: { show: { operation: ['list'] } },
+      },
+      {
+        displayName: 'Offset',
+        name: 'offset',
+        type: 'number',
+        default: 0,
+        description: 'Number of records to skip before returning results. Use together with Limit for pagination.',
+        typeOptions: { minValue: 0 },
+        displayOptions: { show: { operation: ['list'] } },
+      },
+      // ── Options ──────────────────────────────────────────────────────────────
+      {
+        displayName: 'Options',
+        name: 'options',
+        type: 'collection',
+        placeholder: 'Add option',
+        default: {},
+        displayOptions: { show: { operation: ['create', 'get', 'update', 'delete', 'list'] } },
+        options: [
+          {
+            displayName: 'Continue on Fail',
+            name: 'continueOnFail',
+            type: 'boolean',
+            default: false,
+            description: 'Whether to continue workflow execution when this node fails. Failed items will include an error property.',
+          },
+        ],
       },
     ],
   };
@@ -261,54 +296,84 @@ export class Fyso implements INodeType {
     const results: INodeExecutionData[] = [];
 
     for (let i = 0; i < items.length; i++) {
-      const tenantLocator = this.getNodeParameter('tenantId', i) as { value: string };
-      const entityLocator = this.getNodeParameter('entityName', i) as { value: string };
-      const operation = this.getNodeParameter('operation', i) as string;
-      const tenantId = tenantLocator.value;
-      const entityName = entityLocator.value;
+      try {
+        const tenantLocator = this.getNodeParameter('tenantId', i) as { value: string };
+        const entityLocator = this.getNodeParameter('entityName', i) as { value: string };
+        const operation = this.getNodeParameter('operation', i) as string;
+        const tenantId = tenantLocator.value;
+        const entityName = entityLocator.value;
 
-      const { baseUrl, token } = await getAuth(this, tenantId);
-      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-      const base = `${baseUrl}/api/entities/${entityName}`;
+        const { baseUrl, token } = await getAuth(this, tenantId);
+        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const base = `${baseUrl}/api/entities/${entityName}`;
 
-      let responseData: unknown;
+        if (operation === 'create') {
+          const fieldData = this.getNodeParameter('fields', i) as { value: IDataObject };
+          const body = fieldData.value ?? {};
+          const res = await fetch(`${base}/records`, { method: 'POST', headers, body: JSON.stringify(body) });
+          const data = (await res.json()) as { success: boolean; data?: IDataObject; error?: string };
+          if (!res.ok || !data.success) {
+            throw new NodeApiError(this.getNode(), { message: data.error ?? 'Failed to create record', statusCode: res.status } as JsonObject);
+          }
+          results.push({ json: data.data ?? (data as IDataObject), pairedItem: i });
 
-      if (operation === 'create') {
-        const fieldData = this.getNodeParameter('fields', i) as { value: IDataObject };
-        const body = fieldData.value ?? {};
-        const res = await fetch(`${base}/records`, { method: 'POST', headers, body: JSON.stringify(body) });
-        responseData = await res.json();
-      } else if (operation === 'get') {
-        const recordId = this.getNodeParameter('recordId', i) as string;
-        const res = await fetch(`${base}/records/${recordId}`, { headers });
-        responseData = await res.json();
-      } else if (operation === 'list') {
-        const limit = this.getNodeParameter('limit', i) as number;
-        const res = await fetch(`${base}/records?limit=${limit}`, { headers });
-        const data = (await res.json()) as { success: boolean; data?: unknown[] };
-        if (data.success && Array.isArray(data.data)) {
-          return [data.data.map((record) => ({ json: record as IDataObject }))];
+        } else if (operation === 'get') {
+          const recordId = this.getNodeParameter('recordId', i) as string;
+          const res = await fetch(`${base}/records/${recordId}`, { headers });
+          const data = (await res.json()) as { success: boolean; data?: IDataObject; error?: string };
+          if (!res.ok || !data.success) {
+            throw new NodeApiError(this.getNode(), { message: data.error ?? `Record ${recordId} not found`, statusCode: res.status } as JsonObject);
+          }
+          results.push({ json: data.data ?? (data as IDataObject), pairedItem: i });
+
+        } else if (operation === 'list') {
+          const limit = this.getNodeParameter('limit', i) as number;
+          const offset = this.getNodeParameter('offset', i) as number;
+          const res = await fetch(`${base}/records?limit=${limit}&offset=${offset}`, { headers });
+          const data = (await res.json()) as { success: boolean; data?: IDataObject[]; error?: string };
+          if (!res.ok || !data.success) {
+            throw new NodeApiError(this.getNode(), { message: data.error ?? 'Failed to list records', statusCode: res.status } as JsonObject);
+          }
+          const records = Array.isArray(data.data) ? data.data : [];
+          for (const record of records) {
+            results.push({ json: record, pairedItem: i });
+          }
+
+        } else if (operation === 'update') {
+          const recordId = this.getNodeParameter('recordId', i) as string;
+          const fieldData = this.getNodeParameter('fields', i) as { value: IDataObject };
+          const body = fieldData.value ?? {};
+          const res = await fetch(`${base}/records/${recordId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(body),
+          });
+          const data = (await res.json()) as { success: boolean; data?: IDataObject; error?: string };
+          if (!res.ok || !data.success) {
+            throw new NodeApiError(this.getNode(), { message: data.error ?? `Failed to update record ${recordId}`, statusCode: res.status } as JsonObject);
+          }
+          results.push({ json: data.data ?? (data as IDataObject), pairedItem: i });
+
+        } else if (operation === 'delete') {
+          const recordId = this.getNodeParameter('recordId', i) as string;
+          const res = await fetch(`${base}/records/${recordId}`, { method: 'DELETE', headers });
+          const data = (await res.json()) as { success: boolean; error?: string };
+          if (!res.ok || !data.success) {
+            throw new NodeApiError(this.getNode(), { message: data.error ?? `Failed to delete record ${recordId}`, statusCode: res.status } as JsonObject);
+          }
+          results.push({ json: { success: true, id: recordId }, pairedItem: i });
+
+        } else {
+          throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`, { itemIndex: i });
         }
-        responseData = data;
-      } else if (operation === 'update') {
-        const recordId = this.getNodeParameter('recordId', i) as string;
-        const fieldData = this.getNodeParameter('fields', i) as { value: IDataObject };
-        const body = fieldData.value ?? {};
-        const res = await fetch(`${base}/records/${recordId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(body),
-        });
-        responseData = await res.json();
-      } else if (operation === 'delete') {
-        const recordId = this.getNodeParameter('recordId', i) as string;
-        const res = await fetch(`${base}/records/${recordId}`, { method: 'DELETE', headers });
-        responseData = await res.json();
-      } else {
-        throw new NodeOperationError(this.getNode(), `Unknown operation: ${operation}`);
-      }
 
-      results.push({ json: responseData as IDataObject });
+      } catch (error) {
+        if (this.continueOnFail()) {
+          results.push({ json: { error: (error as Error).message }, pairedItem: i });
+          continue;
+        }
+        throw error;
+      }
     }
 
     return [results];
